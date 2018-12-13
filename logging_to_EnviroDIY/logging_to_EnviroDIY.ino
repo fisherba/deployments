@@ -271,8 +271,8 @@ bool sleepFxn(void)
 
 // And we still need the connection information for the network
 const char *apn = "hologram";  // The APN for the gprs connection, unnecessary for WiFi
-// const char *wifiId = "xxxxx";  // The WiFi access point, unnecessary for gprs
-// const char *wifiPwd = "xxxxx";  // The password for connecting to WiFi, unnecessary for gprs
+const char *wifiId = "xxxxx";  // The WiFi access point, unnecessary for gprs
+const char *wifiPwd = "xxxxx";  // The password for connecting to WiFi, unnecessary for gprs
 
 // Create the loggerModem instance
 #include <LoggerModem.h>
