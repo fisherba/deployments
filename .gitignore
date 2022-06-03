@@ -50,9 +50,8 @@ Temporary Items
 .idea/
 
 # Atom / PlatformIO
-.pioenvs
-.piolibdeps
-.clang_complete
+.pioenvs/
+.clang_complete/
 .gcc-flags.json
 lib/readme.txt
 include/readme.txt
@@ -70,3 +69,5 @@ YosemitechDO/
 LongTermLogger/
 barometric_correction/
 3G_Test/
+.pio/
+.pioenvs/
