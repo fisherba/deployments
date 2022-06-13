@@ -274,8 +274,8 @@ LoggerEnviroDIY EnviroDIYLogger(LoggerID, loggingInterval, sdCardPin, wakePin, &
 // Device registration and sampling feature information
 //   This should be obtained after registration at http://data.envirodiy.org
 // ==========================================================================
-const char *registrationToken = "insert";   // Device registration token
-const char *samplingFeature = "insert";     // Sampling feature UUID
+const char *registrationToken = "d86bb6c7-e0c4-4c19-acb7-17a4c7f3eeca";   // Device registration token
+const char *samplingFeature = "103b2e3e-2c53-4a39-8d76-3c2f0a016615";     // Sampling feature UUID
 
 
 // ==========================================================================
