@@ -217,6 +217,33 @@ BoschBME280 bme280(I2CPower, BMEi2c_addr);
 /** End [bme280] */
 
 // ==========================================================================
+//  Maxbotix HRXL Ultrasonic Range Finder
+// ==========================================================================
+/** Start [maxbotics] */
+#include <sensors/MaxBotixSonar.h>
+
+// A Maxbotix sonar with the trigger pin disconnect CANNOT share the serial port
+// A Maxbotix sonar using the trigger may be able to share but YMMV
+
+// NOTE: Extra hardware and software serial ports are created in the "Settings
+// for Additional Serial Ports" section
+
+const int8_t SonarPower = sensorPowerPin;  // Excite (power) pin
+    // (-1 if unconnected)
+const int8_t Sonar1Trigger = -1;  // Trigger pin
+    // (a unique negative number if unconnected)
+const uint8_t sonar1NumberReadings = 3;  // The number of readings to average
+
+// Create a MaxBotix Sonar sensor object
+MaxBotixSonar sonar1(sonarSerial, SonarPower, Sonar1Trigger,
+                     sonar1NumberReadings);
+
+Variable* sonar1Range =
+    new MaxBotixSonar_Range(&sonar1, "12345678-abcd-1234-ef00-1234567890ab");
+/** End [maxbotics] */
+
+
+// ==========================================================================
 //  Yosemitech Y511 Turbidity Sensor with Wiper
 // ==========================================================================
 /** Start [y511] */
@@ -227,7 +254,7 @@ BoschBME280 bme280(I2CPower, BMEi2c_addr);
 // Sensor Serial Number      0x01      ------    YL2920031803
 byte         y511ModbusAddress = 0x03;  // The modbus address of the Y511
 const int8_t y511AdapterPower =
-    sensorPowerPin;  // RS485 adapter power pin (-1 if unconnected)
+sensorPowerPin;  // RS485 adapter power pin (-1 if unconnected)
 const int8_t  y511SensorPower = A3;  // Sensor power pin
 const int8_t  y511EnablePin   = -1;  // Adapter RE/DE pin (-1 if not applicable)
 const uint8_t y511NumberReadings = 5;
@@ -302,33 +329,6 @@ Variable* tbi2cWindCounts =
 
 
 // ==========================================================================
-//  Maxbotix HRXL Ultrasonic Range Finder
-// ==========================================================================
-/** Start [maxbotics] */
-#include <sensors/MaxBotixSonar.h>
-
-// A Maxbotix sonar with the trigger pin disconnect CANNOT share the serial port
-// A Maxbotix sonar using the trigger may be able to share but YMMV
-
-// NOTE: Extra hardware and software serial ports are created in the "Settings
-// for Additional Serial Ports" section
-
-const int8_t SonarPower = sensorPowerPin;  // Excite (power) pin
-    // (-1 if unconnected)
-const int8_t Sonar1Trigger = -1;  // Trigger pin
-    // (a unique negative number if unconnected)
-const uint8_t sonar1NumberReadings = 3;  // The number of readings to average
-
-// Create a MaxBotix Sonar sensor object
-MaxBotixSonar sonar1(sonarSerial, SonarPower, Sonar1Trigger,
-                     sonar1NumberReadings);
-
-Variable* sonar1Range =
-    new MaxBotixSonar_Range(&sonar1, "12345678-abcd-1234-ef00-1234567890ab");
-/** End [maxbotics] */
-
-
-// ==========================================================================
 //    Calculated Variables
 // ==========================================================================
 
@@ -339,12 +339,14 @@ float calculateSonarGageHeight(void)
     float sonarGageHeight_mm = -9999;  // Always safest to start with a bad value
     const float minimumRange = 500;    // in millimeters
     const float maximumRange = 9999;    // in millimeters
-    const float sonarDistanceToZeroStage = 304.8*(96.5/12); // in millimeters, where 304.8 mm = 1.00 ft
+    const float sonarDistanceToZeroStage = 304.8*(96.5/12); 
+    // in millimeters, where 304.8 mm = 1.00 ft
     float sonarDistanceMeasured = sonar1Range->getValue();
     if (sonarDistanceMeasured != -9999)  // make sure all inputs are good
     {
         sonarGageHeight_mm = sonarDistanceToZeroStage - sonarDistanceMeasured;
-        sonarGageHeight = sonarGageHeight_mm / 304.8; // to convert to feet, divide by 304.8, or divide by 1 to remain in mm.
+        sonarGageHeight = sonarGageHeight_mm / 304.8; 
+        // to convert to feet, divide by 304.8, or divide by 1 to remain in mm.
     }
     return sonarGageHeight;
 }
@@ -638,6 +640,7 @@ void setup() {
 // ==========================================================================
 //  Arduino Loop Function
 // ==========================================================================
+
 /** Start [complex_loop] */
 // Use this long loop when you want to do something special
 // Because of the way alarms work on the RTC, it will wake the processor and

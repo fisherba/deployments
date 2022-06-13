@@ -1,200 +1,302 @@
-/*****************************************************************************
-logging_to_EnviroDIY.ino
-Written By:  Sara Damiano (sdamiano@stroudcenter.org)
-Development Environment: PlatformIO 3.2.1
-Hardware Platform: EnviroDIY Mayfly Arduino Datalogger
-Software License: BSD-3.
-  Copyright (c) 2017, Stroud Water Research Center (SWRC)
-  and the EnviroDIY Development Team
-
-This sketch is an example of logging data to an SD card and sending the data to
-the EnviroDIY data portal.
-
-; Using ModularSensors *calcVar* branch as of June 4, 2018: head, 52 commits ahead of 0.11.6
-    https://github.com/EnviroDIY/ModularSensors.git#4a10279e1031513391ce03d1914684ce5db812ff
-
-DISCLAIMER:
-THIS CODE IS PROVIDED "AS IS" - NO WARRANTY IS GIVEN.
-*****************************************************************************/
-
-// Select your modem chip, comment out all of the others
-#define TINY_GSM_MODEM_SIM800  // Select for a SIM800, SIM900, or variant thereof
-// #define TINY_GSM_MODEM_A6  // Select for a AI-Thinker A6 or A7 chip
-// #define TINY_GSM_MODEM_M590  // Select for a Neoway M590
-// #define TINY_GSM_MODEM_UBLOX  // Select for most u-blox cellular modems
-// #define TINY_GSM_MODEM_ESP8266  // Select for an ESP8266 using the DEFAULT AT COMMAND FIRMWARE
-// #define TINY_GSM_MODEM_XBEE  // Select for Digi brand WiFi or Cellular XBee's
-
-// ==========================================================================
-//    Include the base required libraries
-// ==========================================================================
-#include <Arduino.h>  // The base Arduino library
-#include <EnableInterrupt.h>  // for external and pin change interrupts
-// #include <LoggerEnviroDIY.h>
+/** =========================================================================
+ * @file CircleLakeUpdate.ino
+ * @brief From ModularSensors examples DRWI_LTE.ino + menu_a_la_carte.ino
+ *
+ * @author Sara Geleskie Damiano <sdamiano@stroudcenter.org>
+ * @author Anthony Aufdenkampe <aaufdenkampe@limno.com>
+ * @copyright (c) 2017-2020 Stroud Water Research Center (SWRC)
+ *                          and the EnviroDIY Development Team
+ *            This example is published under the BSD-3 license.
+ *
+ * Build Environment: Visual Studios Code with PlatformIO
+ * Hardware Platform: EnviroDIY Mayfly Arduino Datalogger
+ * Software System: EnviroDIY_ModularSensors@=0.32.2
+ *
+ * DISCLAIMER:
+ * THIS CODE IS PROVIDED "AS IS" - NO WARRANTY IS GIVEN.
+ * ======================================================================= */
 
 
 // ==========================================================================
-//    Data Logger Settings
+//  Include the libraries required for any data logger
 // ==========================================================================
-// The name of this file
-const char *sketchName = "CircleLake2022.ino";
+/** Start [includes] */
+// The Arduino library is needed for every Arduino program.
+#include <Arduino.h>
 
+// EnableInterrupt is used by ModularSensors for external and pin change
+// interrupts and must be explicitly included in the main program.
+#include <EnableInterrupt.h>
+
+// Include the main header for ModularSensors
+#include <ModularSensors.h>
+/** End [includes] */
+
+
+// ==========================================================================
+//  Creating Additional Serial Ports
+// ==========================================================================
+// The modem and a number of sensors communicate over UART/TTL - often called
+// "serial". "Hardware" serial ports (automatically controlled by the MCU) are
+// generally the most accurate and should be configured and used for as many
+// peripherals as possible.  In some cases (ie, modbus communication) many
+// sensors can share the same serial port.
+
+// Unfortunately, most AVR boards have only one or two hardware serial ports,
+// so we'll set up three types of extra software serial ports to use
+
+// AltSoftSerial by Paul Stoffregen
+// (https://github.com/PaulStoffregen/AltSoftSerial) is the most accurate
+// software serial port for AVR boards. AltSoftSerial can only be used on one
+// set of pins on each board so only one AltSoftSerial port can be used. Not all
+// AVR boards are supported by AltSoftSerial.
+/** Start [altsoftserial] */
+#include <AltSoftSerial.h>
+AltSoftSerial altSoftSerial;
+/** End [altsoftserial] */
+
+// NeoSWSerial (https://github.com/SRGDamia1/NeoSWSerial) is the best software
+// serial that can be used on any pin supporting interrupts.
+// You can use as many instances of NeoSWSerial as you need.
+// Not all AVR boards are supported by NeoSWSerial.
+/** Start [neoswserial] */
+#include <NeoSWSerial.h>          // for the stream communication
+const int8_t neoSSerial1Rx = 11;  // data in pin
+const int8_t neoSSerial1Tx = -1;  // data out pin
+NeoSWSerial  neoSSerial1(neoSSerial1Rx, neoSSerial1Tx);
+// To use NeoSWSerial in this library, we define a function to receive data
+// This is just a short-cut for later
+void neoSSerial1ISR() {
+    NeoSWSerial::rxISR(*portInputRegister(digitalPinToPort(neoSSerial1Rx)));
+}
+/** End [neoswserial] */
+
+
+
+// ==========================================================================
+//  Assigning Serial Port Functionality
+// ==========================================================================
+
+/** Start [assign_ports_hw] */
+// If there are additional hardware Serial ports possible - use them!
+
+// We give the modem first priority and assign it to hardware serial
+// All of the supported processors have a hardware port available named Serial1
+#define modemSerial Serial1
+
+/** End [assign_ports_hw] */
+
+/** Start [assign_ports_sw] */
+
+// Define the serial port for modbus
+// Modbus (at 9600 8N1) is used by the Keller level loggers and Yosemitech
+// sensors
+// Since AltSoftSerial is the best software option, we use it for modbus
+// If AltSoftSerial (or its pins) aren't avaiable, use NeoSWSerial
+// SoftwareSerial **WILL NOT** work for modbus!
+#define modbusSerial altSoftSerial  // For AltSoftSerial
+// #define modbusSerial neoSSerial1  // For Neo software serial
+// #define modbusSerial softSerial1  // For software serial
+
+// The Maxbotix sonar is the only sensor that communicates over a serial port
+// but does not use modbus
+// Since the Maxbotix only needs one-way communication and sends a simple text
+// string repeatedly, almost any software serial port will do for it.
+// #define sonarSerial altSoftSerial  // For AltSoftSerial
+#define sonarSerial neoSSerial1     // For Neo software serial
+// #define sonarSerial softSerial1  // For software serial
+
+/** End [assign_ports_sw] */
+
+
+// ==========================================================================
+//  Data Logging Options
+// ==========================================================================
+/** Start [logging_options] */
+// The name of this program file
+const char* sketchName = "CircleLakeUpdate.ino";
 // Logger ID, also becomes the prefix for the name of the data file on SD card
-const char *LoggerID = "Mayfly_30352";
+const char* LoggerID = "Mayfly-20191";
 // How frequently (in minutes) to log data
 const uint8_t loggingInterval = 15;
 // Your logger's timezone.
 const int8_t timeZone = -6;  // Central Standard Time (CST=-6)
+// NOTE:  Daylight savings time will not be applied!  Please use standard time!
 
-
-// ==========================================================================
-//    Primary Arduino-Based Board and Processor
-// ==========================================================================
-#include <ProcessorStats.h>
-
-const long serialBaud = 115200;  // Baud rate for the primary serial port for debugging
-const int8_t greenLED = 8;  // Pin for the green LED (-1 if unconnected)
-const int8_t redLED = 9;  // Pin for the red LED (-1 if unconnected)
-const int8_t buttonPin = 21;  // Pin for a button to use to enter debugging mode (-1 if unconnected)
-const int8_t wakePin = A7;  // Interrupt/Alarm pin to wake from sleep
+// Set the input and output pins for the logger
+// NOTE:  Use -1 for pins that do not apply
+const int32_t serialBaud = 115200;  // Baud rate for debugging
+const int8_t  greenLED   = 8;       // Pin for the green LED
+const int8_t  redLED     = 9;       // Pin for the red LED
+const int8_t  buttonPin  = 21;      // Pin for debugging mode (ie, button pin)
+const int8_t  wakePin    = A7;  // MCU interrupt/alarm pin to wake from sleep
+// Mayfly 0.x
 // Set the wake pin to -1 if you do not want the main processor to sleep.
 // In a SAMD system where you are using the built-in rtc, set wakePin to 1
-const int8_t sdCardPin = 12;  // SD Card Chip Select/Slave Select Pin (must be defined!)
-
-// Create and return the processor "sensor"
-const char *MFVersion = "v0.5b";
-ProcessorStats mayfly(MFVersion) ;
-
-
-// ==========================================================================
-//    Modem/Internet connection options
-// ==========================================================================
-HardwareSerial &ModemSerial = Serial1; // The serial port for the modem - software serial can also be used.
-
-#if defined(TINY_GSM_MODEM_XBEE)
-const long ModemBaud = 9600;  // Default for XBee is 9600, I've sped mine up to 57600
-const int8_t modemSleepRqPin = 23;  // Modem SleepRq Pin (for sleep requests) (-1 if unconnected)
-const int8_t modemStatusPin = 19;   // Modem Status Pin (indicates power status) (-1 if unconnected)
-const int8_t modemVCCPin = -1;  // Modem power pin, if it can be turned on or off (-1 if unconnected)
-ModemSleepType ModemSleepMode = modem_sleep_reverse;  // How the modem is put to sleep
-
-#elif defined(TINY_GSM_MODEM_ESP8266)
-const long ModemBaud = 57600;  // Default for ESP8266 is 115200, but the Mayfly itself stutters above 57600
-const int8_t modemSleepRqPin = 19;  // Modem SleepRq Pin (for sleep requests) (-1 if unconnected)
-const int8_t modemStatusPin = -1;   // Modem Status Pin (indicates power status) (-1 if unconnected)
-const int8_t modemVCCPin = -1;  // Modem power pin, if it can be turned on or off (-1 if unconnected)
-ModemSleepType ModemSleepMode = modem_always_on;  // How the modem is put to sleep
-
-#elif defined(TINY_GSM_MODEM_UBLOX)
-const long ModemBaud = 9600;  // SARA-U201 default seems to be 9600
-const int8_t modemSleepRqPin = 23;  // Modem SleepRq Pin (for sleep requests) (-1 if unconnected)
-const int8_t modemStatusPin = 19;   // Modem Status Pin (indicates power status) (-1 if unconnected)
-const int8_t modemVCCPin = -1;  // Modem power pin, if it can be turned on or off (-1 if unconnected)
-ModemSleepType ModemSleepMode = modem_sleep_held;  // How the modem is put to sleep
-
-#else
-const long ModemBaud = 9600;  // SIM800 auto-detects, but I've had trouble making it fast (19200 works)
-const int8_t modemSleepRqPin = 23;  // Modem SleepRq Pin (for sleep requests) (-1 if unconnected)
-const int8_t modemStatusPin = 19;   // Modem Status Pin (indicates power status) (-1 if unconnected)
-const int8_t modemVCCPin = -1;  // Modem power pin, if it can be turned on or off (-1 if unconnected)
-ModemSleepType ModemSleepMode = modem_sleep_held;  // How the modem is put to sleep
-// Use "modem_sleep_held" if the DTR pin is held HIGH to keep the modem awake, as with a Sodaq GPRSBee rev6.
-// Use "modem_sleep_pulsed" if the DTR pin is pulsed high and then low to wake the modem up, as with an Adafruit Fona or Sodaq GPRSBee rev4.
-// Use "modem_sleep_reverse" if the DTR pin is held LOW to keep the modem awake, as with all XBees.
-// Use "modem_always_on" if you do not want the library to control the modem power and sleep or if none of the above apply.
-#endif
-
-const char *apn = "apn.konekt.io";  // The APN for the gprs connection, unnecessary for WiFi
-const char *wifiId = "xxxxx";  // The WiFi access point, unnecessary for gprs
-const char *wifiPwd = "xxxxx";  // The password for connecting to WiFi, unnecessary for gprs
-
-// Create the loggerModem instance
-// A "loggerModem" is a combination of a TinyGSM Modem, a TinyGSM Client, and an on/off method
-loggerModem modem;
+const int8_t sdCardPwrPin   = -1;  // MCU SD card power pin
+const int8_t sdCardSSPin    = 12;  // SD card chip select/slave select pin
+const int8_t sensorPowerPin = 22;  // MCU pin controlling main sensor power
+/** End [logging_options] */
 
 
 // ==========================================================================
-//    Maxim DS3231 RTC (Real Time Clock)
+//  Wifi/Cellular Modem Options
 // ==========================================================================
-#include <MaximDS3231.h>
-// Create and return the DS3231 sensor object
+/** Start [xbee_cell_transparent] */
+// For any Digi Cellular XBee's
+// NOTE:  The u-blox based Digi XBee's (3G global and LTE-M global) can be used
+// in either bypass or transparent mode, each with pros and cons
+// The Telit based Digi XBees (LTE Cat1) can only use this mode.
+#include <modems/DigiXBeeCellularTransparent.h>
+
+// NOTE: Extra hardware and software serial ports are created in the "Settings
+// for Additional Serial Ports" section
+const int32_t modemBaud = 9600;  // All XBee's use 9600 by default
+
+// Modem Pins - Describe the physical pin connection of your modem to your board
+// NOTE:  Use -1 for pins that do not apply
+// The pin numbers here are for a Digi XBee with a Mayfly and LTE adapter
+// For options https://github.com/EnviroDIY/LTEbee-Adapter/edit/master/README.md
+const int8_t modemVccPin = -1;     // MCU pin controlling modem power
+                                   // Option: modemVccPin = A5, if Mayfly SJ7 is
+                                   // connected to the ASSOC pin
+const int8_t modemStatusPin = 19;  // MCU pin used to read modem status
+// NOTE:  If possible, use the `STATUS/SLEEP_not` (XBee pin 13) for status, but
+// the CTS pin can also be used if necessary
+const bool   useCTSforStatus = false;  // Flag to use the CTS pin for status
+const int8_t modemResetPin   = 20;     // MCU pin connected to modem reset pin
+const int8_t modemSleepRqPin = 23;     // MCU pin for modem sleep/wake request
+const int8_t modemLEDPin = redLED;     // MCU pin connected an LED to show modem
+                                       // status
+
+// Network connection information
+const char* apn = "hologram";  // APN for GPRS connection
+
+// Create the modem object
+
+DigiXBeeCellularTransparent modemXBCT(&modemSerial, modemVccPin, modemStatusPin,
+                                      useCTSforStatus, modemResetPin,
+                                      modemSleepRqPin, apn);
+// Create an extra reference to the modem by a generic name
+DigiXBeeCellularTransparent modem = modemXBCT;
+/** End [xbee_cell_transparent] */
+
+
+// ==========================================================================
+//  Using the Processor as a Sensor
+// ==========================================================================
+/** Start [processor_sensor] */
+#include <sensors/ProcessorStats.h>
+
+// Create the main processor chip "sensor" - for general metadata
+const char*    mcuBoardVersion = "v0.5b";
+ProcessorStats mcuBoard(mcuBoardVersion);
+/** End [processor_sensor] */
+
+
+// ==========================================================================
+//  Maxim DS3231 RTC (Real Time Clock)
+// ==========================================================================
+/** Start [ds3231] */
+#include <sensors/MaximDS3231.h>
+
+// Create a DS3231 sensor object
 MaximDS3231 ds3231(1);
+/** End [ds3231] */
 
 
 // ==========================================================================
-//    Maxbotix HRXL Ultrasonic Range Finder
+//  Bosch BME280 Environmental Sensor
 // ==========================================================================
+/** Start [bme280] */
+#include <sensors/BoschBME280.h>
 
-// Set up a serial port for receiving sonar data - in this case, using software serial
-// Because the standard software serial library uses interrupts that conflict
-// with several other libraries used within this program, we must use a
-// version of software serial that has been stripped of interrupts and define
-// the interrrupts for it using the enableInterrup library.
+const int8_t I2CPower    = sensorPowerPin;  // Power pin (-1 if unconnected)
+uint8_t      BMEi2c_addr = 0x77;
+// The BME280 can be addressed either as 0x77 (Adafruit default) or 0x76 (Grove
+// default) Either can be physically mofidied for the other address
 
-// If enough hardware serial ports are available on your processor, you should
-// use one of those instead.  If the proper pins are avaialbe, AltSoftSerial
-// by Paul Stoffregen is also superior to SoftwareSerial for this sensor.
-// Neither hardware serial nor AltSoftSerial require any modifications to
-// deal with interrupt conflicts.
+// Create a Bosch BME280 sensor object
+BoschBME280 bme280(I2CPower, BMEi2c_addr);
+/** End [bme280] */
 
-const int SonarData = 11;     // data receive pin
+// ==========================================================================
+//  Maxbotix HRXL Ultrasonic Range Finder
+// ==========================================================================
+/** Start [maxbotics] */
+#include <sensors/MaxBotixSonar.h>
 
-#include <SoftwareSerial_ExtInts.h>  // for the stream communication
-SoftwareSerial_ExtInts sonarSerial(SonarData, -1);  // No Tx pin is required, only Rx
+// A Maxbotix sonar with the trigger pin disconnect CANNOT share the serial port
+// A Maxbotix sonar using the trigger may be able to share but YMMV
 
-// #include <NeoSWSerial.h>  // for the stream communication
-// NeoSWSerial sonarSerial(SonarData, -1);  // No Tx pin is required, only Rx
-// void NeoSWSISR()
-// {
-//   NeoSWSerial::rxISR( *portInputRegister( digitalPinToPort( SonarData ) ) );
-// }
+// NOTE: Extra hardware and software serial ports are created in the "Settings
+// for Additional Serial Ports" section
 
-#include <MaxBotixSonar.h>
+// NOTE: Use -1 for any pins that don't apply or aren't being used.
 const int8_t SonarPower = sensorPowerPin;  // Excite (power) pin
-    // (-1 if unconnected)
-const int8_t Sonar1Trigger = -1;  // Trigger pin (a negative number if unconnected) (A1 = 25)
-// const int8_t Sonar2Trigger = A2;  // Trigger pin (a negative number if unconnected) (A2 = 26)
+const int8_t Sonar1Trigger = -1;  // Trigger pin
+// (a *unique* negative number if unconnected)
 const uint8_t sonar1NumberReadings = 5;  // The number of readings to average
-// Create and return the MaxBotix Sonar sensor object
-MaxBotixSonar sonar1(sonarSerial, SonarPower, Sonar1Trigger, sonar1NumberReadings) ;
-// MaxBotixSonar sonar2(sonarSerial, SonarPower, Sonar2Trigger) ;
 
+// Create a MaxBotix Sonar sensor object
+MaxBotixSonar sonar1(sonarSerial, SonarPower, Sonar1Trigger,
+                     sonar1NumberReadings);
+
+// Create an ultrasonic range variable pointer
 Variable* sonar1Range =
     new MaxBotixSonar_Range(&sonar1, "12345678-abcd-1234-ef00-1234567890ab");
+/** End [maxbotics] */
 
-// Set up a serial port for modbus communication - in this case, using AltSoftSerial
-#include <AltSoftSerial.h>
-AltSoftSerial modbusSerial;
 
 // ==========================================================================
-//    Yosemitech Y511 Turbidity Sensor with Wiper
+//  Yosemitech Y511 Turbidity Sensor with Wiper
 // ==========================================================================
-#include <YosemitechY511.h>
-byte y511modbusAddress = 0x03;  // The modbus address of the Y511
-const int8_t modbusPower = 22;  // Pin to switch power on and off (-1 if unconnected)
-const int8_t max485EnablePin = -1;  // Pin connected to the RE/DE on the 485 chip (-1 if unconnected)
-const uint8_t y511NumberReadings = 5;  // The manufacturer recommends averaging 10 readings, but we take 5 to minimize power consumption
-// Create and return the Y511-A Turbidity sensor object
-YosemitechY511 y511(y511modbusAddress, modbusSerial, modbusPower, max485EnablePin, y511NumberReadings);
+/** Start [y511] */
+#include <sensors/YosemitechY511.h>
+
+// NOTE: Extra hardware and software serial ports are created in the "Settings
+// for Additional Serial Ports" section
+// Sensor Serial Number      0x01      ------    YL2920031803
+byte         y511ModbusAddress = 0x03;  // The modbus address of the Y511
+const int8_t y511AdapterPower  = sensorPowerPin;  // RS485 adapter power pin
+                                                  // (-1 if unconnected)
+const int8_t  y511SensorPower = sensorPowerPin;               // Sensor power pin
+const int8_t  y511EnablePin   = -1;  // Adapter RE/DE pin (-1 if not applicable)
+const uint8_t y511NumberReadings = 5;
+// The manufacturer recommends averaging 10 readings, but we take 5 to minimize
+// power consumption
 
 // Create a Y511-A Turbidity sensor object
 YosemitechY511 y511(y511ModbusAddress, modbusSerial, y511AdapterPower,
                     y511SensorPower, y511EnablePin, y511NumberReadings);
 
+/** End [y511] */
+
+
 // ==========================================================================
 //    Yosemitech Y520 Conductivity Sensor
 // ==========================================================================
-#include <YosemitechY520.h>
-byte y520modbusAddress = 0x01;  // The modbus address of the Y520 Conductivity
-// const int8_t modbusPower = 22;  // Pin to switch power on and off (-1 if unconnected)
-// const int8_t max485EnablePin = -1;  // Pin connected to the RE/DE on the 485 chip (-1 if unconnected)
-const uint8_t y520NumberReadings = 5;  // The manufacturer recommends averaging 10 readings, but we take 5 to minimize power consumption
-// Create and return the Y520 conductivity sensor object
-YosemitechY520 y520(y520modbusAddress, modbusSerial, modbusPower, max485EnablePin, y520NumberReadings);
+/** Start [y520] */
+#include <sensors/YosemitechY520.h>
+
+// NOTE: Extra hardware and software serial ports are created in the "Settings
+// for Additional Serial Ports" section
+
+byte         y520ModbusAddress = 0x01;  // The modbus address of the Y520
+// Sensor Serial Number YL0920042801
+const int8_t y520AdapterPower  = sensorPowerPin;  // RS485 adapter power pin
+                                                  // (-1 if unconnected)
+const int8_t  y520SensorPower = sensorPowerPin;               // Sensor power pin
+const int8_t  y520EnablePin   = -1;  // Adapter RE/DE pin (-1 if not applicable)
+const uint8_t y520NumberReadings = 5;
+// The manufacturer recommends averaging 10 readings, but we take 5 to minimize
+// power consumption
 
 // Create a Y520 conductivity sensor object
 YosemitechY520 y520(y520ModbusAddress, modbusSerial, y520AdapterPower,
                     y520SensorPower, y520EnablePin, y520NumberReadings);
+
+/** End [y520] */
 
 // ==========================================================================
 //  External I2C Rain Tipping Bucket Counter
@@ -233,54 +335,52 @@ Variable* tbi2cWindCounts =
 
 
 // ==========================================================================
-//  Bosch BME280 Environmental Sensor
+//  Calculated Variable[s]
 // ==========================================================================
-/** Start [bme280] */
-#include <sensors/BoschBME280.h>
 
-const int8_t I2CPower    = sensorPowerPin;  // Power pin (-1 if unconnected)
-uint8_t      BMEi2c_addr = 0x77;
-// The BME280 can be addressed either as 0x77 (Adafruit default) or 0x76 (Grove
-// default) Either can be physically mofidied for the other address
-
-// Create a Bosch BME280 sensor object
-BoschBME280 bme280(I2CPower, BMEi2c_addr);
-/** End [bme280] */
-
-
-
-// ==========================================================================
-//    Calculated Variables
-// ==========================================================================
+/** Start [calculated_variables] */
+// Create the function to give your calculated result.
+// The function should take no input (void) and return a float.
+// You can use any named variable pointers to access values by way of
+// variable->getValue()
 
 // Create the function to calculate water level / gage height variable
-float calculateSonarGageHeight(void)
-{
+float calculateSonarGageHeight(void) {
     float sonarGageHeight = -9999;  // Always safest to start with a bad value
     float sonarGageHeight_mm = -9999;  // Always safest to start with a bad value
     const float minimumRange = 500;    // in millimeters
-    const float maximumRange = 9999;    // in millimeters
-    const float sonarDistanceToZeroStage = 304.8*(96.5/12); // in millimeters, where 304.8 mm = 1.00 ft
+    const float maximumRange = 10000;    // in millimeters
+    const float sonarDistanceToZeroStage = 304.8*(10); // 10-ft
+        // in millimeters, where 304.8 mm = 1.00 ft
     float sonarDistanceMeasured = sonar1Range->getValue();
     if (sonarDistanceMeasured != -9999)  // make sure all inputs are good
     {
         sonarGageHeight_mm = sonarDistanceToZeroStage - sonarDistanceMeasured;
-        sonarGageHeight = sonarGageHeight_mm / 304.8; // to convert to feet, divide by 304.8, or divide by 1 to remain in mm.
+        sonarGageHeight = sonarGageHeight_mm / 304.8;
+          // to convert to feet, divide by 304.8, or divide by 1 to remain in mm.
     }
     return sonarGageHeight;
 }
 
-// Properties of the calculated water level / gage height variable
-const uint8_t sonarGageHeightVarResolution = 3;  // The number of digits after the decimal place
-const char *sonarGageHeightVarName = "gageHeight";  // This must be a value from http://vocabulary.odm2.org/variablename/
-const char *sonarGageHeightVarUnit = "Foot";  // This must be a value from http://vocabulary.odm2.org/units/
-const char *sonarGageHeightVarCode = "SonarGageHeight";  // A short code for the variable
+// Properties of the calculated variable
+// The number of digits after the decimal place
+const uint8_t sonarGageHeightVarResolution = 3;
+// This must be a value from http://vocabulary.odm2.org/variablename/
+const char *sonarGageHeightVarName = "gageHeight";
+// This must be a value from http://vocabulary.odm2.org/units/
+const char *sonarGageHeightVarUnit = "Foot";
+// A short code for the variable
+const char *sonarGageHeightVarCode = "SonarGageHeight";
+// The (optional) universallly unique identifier
 const char *sonarGageHeightVarUUID = "2db61932-df20-4dc5-a353-015dfeb9b178";
 
-// Create the calculated water pressure variable pointer and return a variable pointer to it
-Variable *calculatedSonarGageHeight = new Variable(calculateSonarGageHeight, sonarGageHeightVarResolution,
-                                        sonarGageHeightVarName, sonarGageHeightVarUnit,
-                                        sonarGageHeightVarCode, sonarGageHeightVarUUID);
+// Finally, Create a calculated variable and return a variable pointer to it
+Variable *calculatedSonarGageHeight = new Variable(
+    calculateSonarGageHeight, sonarGageHeightVarResolution,
+    sonarGageHeightVarName, sonarGageHeightVarUnit,
+    sonarGageHeightVarCode, sonarGageHeightVarUUID);
+/** End [calculated_variables] */
+
 
 // ==========================================================================
 
@@ -319,10 +419,13 @@ Variable *calculatedWindSpeed = new Variable(
     calculatedVarUnit, calculatedVarCode, calculatedVarUUID);
 
 
+
 // ==========================================================================
 //  Creating the Variable Array[s] and Filling with Variable Objects
 // ==========================================================================
-/** Start [variable_arrays] */
+/** Start [variables_create_in_array] */
+// Version 1: Create pointers for all of the variables from the sensors,
+// at the same time putting them into an array
 Variable* variableList[] = {
     // new ProcessorStats_SampleNumber(&mcuBoard, "12345678-abcd-1234-ef00-1234567890ab"),
     new BoschBME280_Temp(&bme280, "6575ae8b-fd62-4a76-b4f8-fc54b2411d89"),
@@ -344,212 +447,362 @@ Variable* variableList[] = {
     // new Modem_SignalPercent(&modem, "12345678-abcd-1234-ef00-1234567890ab"),
 };
 
+
 // Count up the number of pointers in the array
 int variableCount = sizeof(variableList) / sizeof(variableList[0]);
+
 // Create the VariableArray object
 VariableArray varArray(variableCount, variableList);
+/** End [variables_create_in_array] */
+
+
+// ==========================================================================
+//  The Logger Object[s]
+// ==========================================================================
+/** Start [loggers] */
 // Create a new logger instance
-LoggerEnviroDIY EnviroDIYLogger(LoggerID, loggingInterval, sdCardPin, wakePin, &varArray);
+Logger dataLogger(LoggerID, loggingInterval, &varArray);
+/** End [loggers] */
 
 
 // ==========================================================================
-// Device registration and sampling feature information
-//   This should be obtained after registration at http://data.envirodiy.org
+//  A Publisher to Monitor My Watershed / EnviroDIY Data Sharing Portal
 // ==========================================================================
-const char *registrationToken = "8c5936b3-2e7c-4e25-890a-b61552a1511d";   // Device registration token
-const char *samplingFeature = "b22fb85d-e96d-4790-ac4c-a02ea190bd85";     // Sampling feature UUID
+/** Start [monitormw] */
+// Device registration and sampling feature information can be obtained after
+// registration at https://monitormywatershed.org or https://data.envirodiy.org
+const char* registrationToken =
+    "8c5936b3-2e7c-4e25-890a-b61552a1511d";  // Device registration token
+const char* samplingFeature =
+    "b22fb85d-e96d-4790-ac4c-a02ea190bd85";  // Sampling feature UUID
+
+// Create a data publisher for the Monitor My Watershed/EnviroDIY POST endpoint
+#include <publishers/EnviroDIYPublisher.h>
+EnviroDIYPublisher EnviroDIYPOST(dataLogger, &modem.gsmClient,
+                                 registrationToken, samplingFeature);
+/** End [monitormw] */
 
 
 // ==========================================================================
-//    Working Functions
+//  Working Functions
 // ==========================================================================
-
+/** Start [working_functions] */
 // Flashes the LED's on the primary board
-void greenredflash(int numFlash = 4, int rate = 75)
-{
-  for (int i = 0; i < numFlash; i++) {
-    digitalWrite(greenLED, HIGH);
+void greenredflash(uint8_t numFlash = 4, uint8_t rate = 75) {
+    for (uint8_t i = 0; i < numFlash; i++) {
+        digitalWrite(greenLED, HIGH);
+        digitalWrite(redLED, LOW);
+        delay(rate);
+        digitalWrite(greenLED, LOW);
+        digitalWrite(redLED, HIGH);
+        delay(rate);
+    }
     digitalWrite(redLED, LOW);
-    delay(rate);
-    digitalWrite(greenLED, LOW);
-    digitalWrite(redLED, HIGH);
-    delay(rate);
-  }
-  digitalWrite(redLED, LOW);
 }
 
+// Uses the processor sensor object to read the battery voltage
+// NOTE: This will actually return the battery level from the previous update!
+float getBatteryVoltage() {
+    if (mcuBoard.sensorValues[0] == -9999) mcuBoard.update();
+    return mcuBoard.sensorValues[0];
+}
+/** End [working_functions] */
+
 
 // ==========================================================================
-// Main setup function
+//  Arduino Setup Function
 // ==========================================================================
-void setup()
-{
+/** Start [setup] */
+void setup() {
+
+    /** Start [setup_prints] */
     // Start the primary serial connection
     Serial.begin(serialBaud);
 
-    // Start the serial connection with the modem
-    ModemSerial.begin(ModemBaud);
-
-    // Start the stream for the modbus sensors
-    modbusSerial.begin(9600);
-
-    // Start the SoftwareSerial stream for the sonar
-    sonarSerial.begin(9600);
-    // Allow interrupts for software serial
-    #if defined SoftwareSerial_ExtInts_h
-        enableInterrupt(SonarData, SoftwareSerial_ExtInts::handle_interrupt, CHANGE);
-    #endif
-    #if defined NeoSWSerial_h
-        enableInterrupt(SonarData, NeoSWSISR, CHANGE);
-    #endif
-
-    // Set up pins for the LED's
-    pinMode(greenLED, OUTPUT);
-    pinMode(redLED, OUTPUT);
-    // Blink the LEDs to show the board is on and starting up
-    greenredflash();
-
     // Print a start-up note to the first serial port
-    Serial.print(F("Now running "));
+    Serial.print(F("\n\nNow running "));
     Serial.print(sketchName);
     Serial.print(F(" on Logger "));
     Serial.println(LoggerID);
+    Serial.println();
 
-    // Set the timezone and offsets
-    // Logging in the given time zone
-    Logger::setTimeZone(timeZone);
-    // Offset is the same as the time zone because the RTC is in UTC
-    Logger::setTZOffset(timeZone);
+    Serial.print(F("Using ModularSensors Library version "));
+    Serial.println(MODULAR_SENSORS_VERSION);
+    Serial.print(F("TinyGSM Library version "));
+    Serial.println(TINYGSM_VERSION);
+    Serial.println();
+    /** End [setup_prints] */
 
-    // Setup the logger modem
-    #if defined(TINY_GSM_MODEM_ESP8266)
-        modem.setupModem(&ModemSerial, modemVCCPin, modemStatusPin, modemSleepRqPin, ModemSleepMode, wifiId, wifiPwd);
-    #elif defined(TINY_GSM_MODEM_XBEE)
-        modem.setupModem(&ModemSerial, modemVCCPin, modemStatusPin, modemSleepRqPin, ModemSleepMode, wifiId, wifiPwd);
-        // modem.setupModem(&ModemSerial, modemVCCPin, modemStatusPin, modemSleepRqPin, ModemSleepMode, apn);
-    #else
-        modem.setupModem(&ModemSerial, modemVCCPin, modemStatusPin, modemSleepRqPin, ModemSleepMode, apn);
+    /** Start [setup_softserial] */
+    // Allow interrupts for software serial
+    #if defined SoftwareSerial_ExtInts_h
+        enableInterrupt(softSerialRx, SoftwareSerial_ExtInts::handle_interrupt,
+                        CHANGE);
     #endif
+    #if defined NeoSWSerial_h
+        enableInterrupt(neoSSerial1Rx, neoSSerial1ISR, CHANGE);
+    #endif
+    /** End [setup_softserial] */
 
-    // Attach the modem and information pins to the logger
-    EnviroDIYLogger.attachModem(modem);
-    EnviroDIYLogger.setAlertPin(greenLED);
-    EnviroDIYLogger.setTestingModePin(buttonPin);
+    /** Start [setup_serial_begins] */
+    // Start the serial connection with the modem
+    modemSerial.begin(modemBaud);
 
-    // Enter the tokens for the connection with EnviroDIY
-    EnviroDIYLogger.setToken(registrationToken);
-    EnviroDIYLogger.setSamplingFeatureUUID(samplingFeature);
-
-    // Begin the logger
-    EnviroDIYLogger.begin();
-
-    // Reset AltSoftSerial pins to LOW, to reduce power bleed on sleep,
-    // because Modbus Stop bit leaves these pins HIGH
-    digitalWrite(5, LOW);   // Reset AltSoftSerial Tx pin to LOW
-    digitalWrite(6, LOW);   // Reset AltSoftSerial Rx pin to LOW
-
-    // Blink the LEDs really fast to show start-up is done
-    greenredflash(6, 25);
-}
-
-
-// ==========================================================================
-// Main loop function
-// ==========================================================================
-void loop()
-{
-    // Assuming we were woken up by the clock, check if the current time is an
-    // even interval of the logging interval
-    if (EnviroDIYLogger.checkInterval())
-    {
-        // Flag to notify that we're in already awake and logging a point
-        Logger::isLoggingNow = true;
-
-        // Print a line to show new reading
-        Serial.print(F("------------------------------------------\n"));
-        // Turn on the LED to show we're taking a reading
-        digitalWrite(greenLED, HIGH);
-
-        // Turn on the modem to let it start searching for the network
-        modem.modemPowerUp();
-
-        // Start the stream for the modbus sensors
-        // Because RS485 adapters tend to "steal" current from the data pins
-        // we will explicitly start and end the serial connection in the loop.
-        modbusSerial.begin(9600);
-
-        // Send power to all of the sensors (do this directly on the VariableArray)
-        Serial.print(F("Powering sensors...\n"));
-        varArray.sensorsPowerUp();
-        // Wake up all of the sensors (do this directly on the VariableArray)
-        Serial.print(F("Waking sensors...\n"));
-        varArray.sensorsWake();
-        // Update the values from all attached sensors (do this directly on the VariableArray)
-        Serial.print(F("Updating sensor values...\n"));
-        varArray.updateAllSensors();
-        // Put sensors to sleep (do this directly on the VariableArray)
-        Serial.print(F("Putting sensors back to sleep...\n"));
-        varArray.sensorsSleep();
-        // Cut sensor power (do this directly on the VariableArray)
-        Serial.print(F("Cutting sensor power...\n"));
-        varArray.sensorsPowerDown();
-
-        // Reset AltSoftSerial pins to LOW, to reduce power bleed on sleep,
-        // because Modbus Stop bit leaves these pins HIGH
-        digitalWrite(5, LOW);   // Reset AltSoftSerial Tx pin to LOW
-        digitalWrite(6, LOW);   // Reset AltSoftSerial Rx pin to LOW
-
-        // Connect to the network
-        Serial.print(F("Connecting to the internet...\n"));
-        if (modem.connectInternet())
-        {
-            // Post the data to the WebSDL
-            EnviroDIYLogger.postDataEnviroDIY();
-
-            // Once a day, at midnight, sync the clock
-            if (Logger::markedEpochTime % 86400 == 0)
-            {
-                // Synchronize the RTC (the loggers have the same clock, pick one)
-                EnviroDIYLogger.syncRTClock(modem.getNISTTime());
-            }
-            // Disconnect from the network
-            modem.disconnectInternet();
-        }
-        // Turn the modem off
-        modem.modemPowerDown();
-
-        // Create a csv data record and save it to the log file
-        Serial.print(F("\nWriting to the SD card...\n"));
-        EnviroDIYLogger.logToSD();
-
-        // Turn off the LED
-        digitalWrite(greenLED, LOW);
-        // Print a line to show reading ended
-        Serial.print(F("------------------------------------------\n\n"));
-    }
-
-
-    // Check if it was instead the testing interrupt that woke us up
-    // Want to enter the testing mode for the "complete" logger so we can see
-    // the data from _ALL_ sensors
-    // NOTE:  The testingISR attached to the button at the end of the "setup()"
-    // function turns on the startTesting flag.  So we know if that flag is set
-    // then we want to run the testing mode function.
-
-    // Start the stream for the modbus sensors
-    // Because RS485 adapters tend to "steal" current from the data pins
-    // we will explicitly start and end the serial connection in the loop.
+    // Start the stream for the modbus sensors;
+    // all currently supported modbus sensors use 9600 baud
     modbusSerial.begin(9600);
 
-    if (Logger::startTesting) EnviroDIYLogger.testingMode();
+    // Start the SoftwareSerial stream for the sonar; it will always be at 9600
+    // baud
+    sonarSerial.begin(9600);
+    /** End [setup_serial_begins] */
 
-    // Reset AltSoftSerial pins to LOW, to reduce power bleed on sleep,
-    // because Modbus Stop bit leaves these pins HIGH
-    digitalWrite(5, LOW);   // Reset AltSoftSerial Tx pin to LOW
-    digitalWrite(6, LOW);   // Reset AltSoftSerial Rx pin to LOW
+    /** Start [setup_flashing_led] */
+    // Set up pins for the LED's
+    pinMode(greenLED, OUTPUT);
+    digitalWrite(greenLED, LOW);
+    pinMode(redLED, OUTPUT);
+    digitalWrite(redLED, LOW);
+    // Blink the LEDs to show the board is on and starting up
+    greenredflash();
+    /** End [setup_flashing_led] */
 
+    /** Start [setup_logger] */
+    // Set the timezones for the logger/data and the RTC
+    // Logging in the given time zone
+    Logger::setLoggerTimeZone(timeZone);
+    // It is STRONGLY RECOMMENDED that you set the RTC to be in UTC (UTC+0)
+    Logger::setRTCTimeZone(0);
+
+    // Attach the modem and information pins to the logger
+    dataLogger.attachModem(modem);
+    modem.setModemLED(modemLEDPin);
+    dataLogger.setLoggerPins(wakePin, sdCardSSPin, sdCardPwrPin, buttonPin,
+                             greenLED);
+
+    // Begin the logger
+    dataLogger.begin();
+    /** End [setup_logger] */
+
+    /** Start [setup_sesors] */
+    // Note:  Please change these battery voltages to match your battery
+    // Set up the sensors, except at lowest battery level
+    if (getBatteryVoltage() > 3.4) {
+        Serial.println(F("Setting up sensors..."));
+        varArray.setupSensors();
+    }
+    /** End [setup_sesors] */
+
+    #if defined BUILD_MODEM_XBEE_CELLULAR
+        /** Start [setup_xbeec_carrier] */
+        // Extra modem set-up
+        Serial.println(F("Waking modem and setting Cellular Carrier Options..."));
+        modem.modemWake();  // NOTE:  This will also set up the modem
+        // Go back to command mode to set carrier options
+        for (uint8_t i = 0; i < 5; i++) {
+            // Wait the required guard time before entering command mode
+            delay(1010);
+            modem.gsmModem.streamWrite(GF("+++"));  // enter command mode
+            if (modem.gsmModem.waitResponse(2000, GF("OK\r")) == 1) break;
+        }
+        // Carrier Profile - 0 = Automatic selection
+        //                 - 1 = No profile/SIM ICCID selected
+        //                 - 2 = AT&T
+        //                 - 3 = Verizon
+        // NOTE:  To select T-Mobile, you must enter bypass mode!
+        modem.gsmModem.sendAT(GF("CP"), 0);  // Auto select in rural locations
+        modem.gsmModem.waitResponse(GF("OK\r"));
+        // Cellular network technology - 0 = LTE-M with NB-IoT fallback
+        //                             - 1 = NB-IoT with LTE-M fallback
+        //                             - 2 = LTE-M only
+        //                             - 3 = NB-IoT only
+        // NOTE:  As of 2020 in the USA, AT&T and Verizon only use LTE-M
+        // T-Mobile uses NB-IOT
+        modem.gsmModem.sendAT(GF("N#"), 2);
+        modem.gsmModem.waitResponse();
+        // Write changes to flash and apply them
+        Serial.println(F("Wait while applying changes..."));
+        // Write changes to flash
+        modem.gsmModem.sendAT(GF("WR"));
+        modem.gsmModem.waitResponse(GF("OK\r"));
+        // Apply changes
+        modem.gsmModem.sendAT(GF("AC"));
+        modem.gsmModem.waitResponse(GF("OK\r"));
+        // Reset the cellular component to ensure network settings are changed
+        modem.gsmModem.sendAT(GF("!R"));
+        modem.gsmModem.waitResponse(30000L, GF("OK\r"));
+        // Force reset of the Digi component as well
+        // This effectively exits command mode
+        modem.gsmModem.sendAT(GF("FR"));
+        modem.gsmModem.waitResponse(5000L, GF("OK\r"));
+        /** End [setup_xbeec_carrier] */
+    #endif
+
+
+    /** Start [setup_clock] */
+    // Sync the clock if it isn't valid or we have battery to spare
+    if (getBatteryVoltage() > 3.55 || !dataLogger.isRTCSane()) {
+        // Synchronize the RTC with NIST
+        // This will also set up the modem
+        dataLogger.syncRTC();
+    }
+    /** End [setup_clock] */
+
+    /** Start [setup_file] */
+    // Create the log file, adding the default header to it
+    // Do this last so we have the best chance of getting the time correct and
+    // all sensor names correct
+    // Writing to the SD card can be power intensive, so if we're skipping
+    // the sensor setup we'll skip this too.
+    if (getBatteryVoltage() > 3.4) {
+        Serial.println(F("Setting up file on SD card"));
+        dataLogger.turnOnSDcard(true);
+            // true = wait for card to settle after power up
+        dataLogger.createLogFile(true);  // true = write a new header
+        dataLogger.turnOffSDcard(true);
+            // true = wait for internal housekeeping after write
+    }
+    /** End [setup_file] */
+
+    /** Start [setup_sleep] */
+    // Call the processor sleep
+    Serial.println(F("Putting processor to sleep\n"));
+    dataLogger.systemSleep();
+    /** End [setup_sleep] */
+}
+/** End [setup] */
+
+
+// ==========================================================================
+//  Arduino Loop Function
+// ==========================================================================
+
+/** Start [complex_loop] */
+// Use this long loop when you want to do something special
+// Because of the way alarms work on the RTC, it will wake the processor and
+// start the loop every minute exactly on the minute.
+// The processor may also be woken up by another interrupt or level change on a
+// pin - from a button or some other input.
+// The "if" statements in the loop determine what will happen - whether the
+// sensors update, testing mode starts, or it goes back to sleep.
+
+// We use this long to reset AltSoftSerial pins to LOW,
+// to reduce RS485 adapter power bleed on sleep
+
+void loop() {
+    // Reset the watchdog
+    dataLogger.watchDogTimer.resetWatchDog();
+
+    // Assuming we were woken up by the clock, check if the current time is an
+    // even interval of the logging interval
+    // We're only doing anything at all if the battery is above 3.4V
+    if (dataLogger.checkInterval() && getBatteryVoltage() > 3.4) {
+        // Flag to notify that we're in already awake and logging a point
+        Logger::isLoggingNow = true;
+        dataLogger.watchDogTimer.resetWatchDog();
+
+        // Print a line to show new reading
+        Serial.println(F("------------------------------------------"));
+        // Turn on the LED to show we're taking a reading
+        dataLogger.alertOn();
+        // Power up the SD Card, but skip any waits after power up
+        dataLogger.turnOnSDcard(false);
+        dataLogger.watchDogTimer.resetWatchDog();
+
+        // Turn on the modem to let it start searching for the network
+        // Only turn the modem on if the battery at the last interval was high
+        // enough
+        // NOTE:  if the modemPowerUp function is not run before the
+        // completeUpdate
+        // function is run, the modem will not be powered and will not
+        // return a signal strength reading.
+        if (getBatteryVoltage() > 3.6) modem.modemPowerUp();
+
+        // Start the stream for the modbus sensors, if your RS485 adapter bleeds
+        // current from data pins when powered off & you stop modbus serial
+        // connection with digitalWrite(5, LOW), below.
+// https://github.com/EnviroDIY/ModularSensors/issues/140#issuecomment-389380833
+        altSoftSerial.begin(9600);
+
+        // Do a complete update on the variable array.
+        // This this includes powering all of the sensors, getting updated
+        // values, and turing them back off.
+        // NOTE:  The wake function for each sensor should force sensor setup
+        // to run if the sensor was not previously set up.
+        varArray.completeUpdate();
+
+        dataLogger.watchDogTimer.resetWatchDog();
+
+        // Reset modbus serial pins to LOW, if your RS485 adapter bleeds power
+        // on sleep, because Modbus Stop bit leaves these pins HIGH.
+// https://github.com/EnviroDIY/ModularSensors/issues/140#issuecomment-389380833
+        digitalWrite(5, LOW);  // Reset AltSoftSerial Tx pin to LOW
+        digitalWrite(6, LOW);  // Reset AltSoftSerial Rx pin to LOW
+
+        // Create a csv data record and save it to the log file
+        dataLogger.logToSD();
+        dataLogger.watchDogTimer.resetWatchDog();
+
+        // Connect to the network
+        // Again, we're only doing this if the battery is doing well
+        if (getBatteryVoltage() > 3.55) {
+            dataLogger.watchDogTimer.resetWatchDog();
+            if (modem.connectInternet()) {
+                dataLogger.watchDogTimer.resetWatchDog();
+                // Publish data to remotes
+                Serial.println(F("Modem connected to internet."));
+                dataLogger.publishDataToRemotes();
+
+                // Sync the clock at midnight
+                dataLogger.watchDogTimer.resetWatchDog();
+                if (Logger::markedEpochTime != 0 &&
+                    Logger::markedEpochTime % 86400 == 0) {
+                    Serial.println(F("Running a daily clock sync..."));
+                    dataLogger.setRTClock(modem.getNISTTime());
+                    dataLogger.watchDogTimer.resetWatchDog();
+                    modem.updateModemMetadata();
+                    dataLogger.watchDogTimer.resetWatchDog();
+                }
+
+                // Disconnect from the network
+                modem.disconnectInternet();
+                dataLogger.watchDogTimer.resetWatchDog();
+            }
+            // Turn the modem off
+            modem.modemSleepPowerDown();
+            dataLogger.watchDogTimer.resetWatchDog();
+        }
+
+        // Cut power from the SD card - without additional housekeeping wait
+        dataLogger.turnOffSDcard(false);
+        dataLogger.watchDogTimer.resetWatchDog();
+        // Turn off the LED
+        dataLogger.alertOff();
+        // Print a line to show reading ended
+        Serial.println(F("------------------------------------------\n"));
+
+        // Unset flag
+        Logger::isLoggingNow = false;
+    }
+
+    // Check if it was instead the testing interrupt that woke us up
+    if (Logger::startTesting) {
+        // Start the stream for the modbus sensors, if your RS485 adapter bleeds
+        // current from data pins when powered off & you stop modbus serial
+        // connection with digitalWrite(5, LOW), below.
+        // https://github.com/EnviroDIY/ModularSensors/issues/140#issuecomment-389380833
+        altSoftSerial.begin(9600);
+
+        dataLogger.testingMode();
+    }
+
+    // Reset modbus serial pins to LOW, if your RS485 adapter bleeds power
+    // on sleep, because Modbus Stop bit leaves these pins HIGH.
+// https://github.com/EnviroDIY/ModularSensors/issues/140#issuecomment-389380833
+    digitalWrite(5, LOW);  // Reset AltSoftSerial Tx pin to LOW
+    digitalWrite(6, LOW);  // Reset AltSoftSerial Rx pin to LOW
 
     // Call the processor sleep
-    // Only need to do this for one of the loggers
-    EnviroDIYLogger.systemSleep();
+    dataLogger.systemSleep();
 }
+/** End [complex_loop] */
