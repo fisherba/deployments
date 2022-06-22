@@ -1,5 +1,5 @@
 /** =========================================================================
- * @file CircleLakeUpdate.ino
+ * @file RCB-4.ino
  * @brief From ModularSensors examples DRWI_LTE.ino + menu_a_la_carte.ino
  *
  * @author Sara Geleskie Damiano <sdamiano@stroudcenter.org>
@@ -114,11 +114,11 @@ void neoSSerial1ISR() {
 // ==========================================================================
 /** Start [logging_options] */
 // The name of this program file
-const char* sketchName = "CircleLakeUpdate.ino";
+const char* sketchName = "RCB-4.ino";
 // Logger ID, also becomes the prefix for the name of the data file on SD card
-const char* LoggerID = "Mayfly-20191";
+const char* LoggerID = "RCB-4";
 // How frequently (in minutes) to log data
-const uint8_t loggingInterval = 1;
+const uint8_t loggingInterval = 10;
 // Your logger's timezone.
 const int8_t timeZone = -6;  // Central Standard Time (CST=-6)
 // NOTE:  Daylight savings time will not be applied!  Please use standard time!
@@ -173,7 +173,6 @@ const int8_t modemLEDPin = redLED;     // MCU pin connected an LED to show modem
 const char* apn = "hologram";  // APN for GPRS connection
 
 // Create the modem object
-
 DigiXBeeCellularTransparent modemXBCT(&modemSerial, modemVccPin, modemStatusPin,
                                       useCTSforStatus, modemResetPin,
                                       modemSleepRqPin, apn);
@@ -183,6 +182,10 @@ DigiXBeeCellularTransparent modem = modemXBCT;
 
 
 // ==========================================================================
+// ==========================================================================
+
+
+
 //  Using the Processor as a Sensor
 // ==========================================================================
 /** Start [processor_sensor] */
@@ -206,21 +209,6 @@ MaximDS3231 ds3231(1);
 
 
 // ==========================================================================
-//  Bosch BME280 Environmental Sensor
-// ==========================================================================
-/** Start [bme280] */
-#include <sensors/BoschBME280.h>
-
-const int8_t I2CPower    = sensorPowerPin;  // Power pin (-1 if unconnected)
-uint8_t      BMEi2c_addr = 0x77;
-// The BME280 can be addressed either as 0x77 (Adafruit default) or 0x76 (Grove
-// default) Either can be physically mofidied for the other address
-
-// Create a Bosch BME280 sensor object
-BoschBME280 bme280(I2CPower, BMEi2c_addr);
-/** End [bme280] */
-
-// ==========================================================================
 //  Maxbotix HRXL Ultrasonic Range Finder
 // ==========================================================================
 /** Start [maxbotics] */
@@ -233,9 +221,9 @@ BoschBME280 bme280(I2CPower, BMEi2c_addr);
 // for Additional Serial Ports" section
 
 // NOTE: Use -1 for any pins that don't apply or aren't being used.
-const int8_t SonarPower = sensorPowerPin;  // Excite (power) pin
-const int8_t Sonar1Trigger = -1;  // Trigger pin
-// (a *unique* negative number if unconnected)
+const int8_t SonarPower    = sensorPowerPin;  // Excite (power) pin
+const int8_t Sonar1Trigger = -1;              // Trigger pin
+                                  // (a *unique* negative number if unconnected)
 const uint8_t sonar1NumberReadings = 5;  // The number of readings to average
 
 // Create a MaxBotix Sonar sensor object
@@ -256,7 +244,7 @@ Variable* sonar1Range =
 
 // NOTE: Extra hardware and software serial ports are created in the "Settings
 // for Additional Serial Ports" section
-// Sensor Serial Number      0x01      ------    YL2920031803
+
 byte         y511ModbusAddress = 0x03;  // The modbus address of the Y511
 const int8_t y511AdapterPower  = sensorPowerPin;  // RS485 adapter power pin
                                                   // (-1 if unconnected)
@@ -283,7 +271,6 @@ YosemitechY511 y511(y511ModbusAddress, modbusSerial, y511AdapterPower,
 // for Additional Serial Ports" section
 
 byte         y520ModbusAddress = 0x01;  // The modbus address of the Y520
-// Sensor Serial Number YL0920042801
 const int8_t y520AdapterPower  = sensorPowerPin;  // RS485 adapter power pin
                                                   // (-1 if unconnected)
 const int8_t  y520SensorPower = sensorPowerPin;               // Sensor power pin
@@ -297,41 +284,6 @@ YosemitechY520 y520(y520ModbusAddress, modbusSerial, y520AdapterPower,
                     y520SensorPower, y520EnablePin, y520NumberReadings);
 
 /** End [y520] */
-
-// ==========================================================================
-//  External I2C Rain Tipping Bucket Counter
-// ==========================================================================
-/** Start [i2c_rain] */
-#include <sensors/RainCounterI2C.h>
-
-const uint8_t RainCounterI2CAddress = 0x08;
-// I2C Address for EnviroDIY external tip counter; 0x08 by default
-const float depthPerTipEvent = 0.01;  // rain depth in *inches* per tip event
-
-// Create a Rain Counter sensor object
-RainCounterI2C    tbi2c(RainCounterI2CAddress, depthPerTipEvent);
-/** End [i2c_rain] */
-
-
-// ==========================================================================
-//  External I2C Rain Tipping Bucket Counter for wind, connected to an anemometer
-// ==========================================================================
-/** Start [i2c_rain_wind] */
-#include <sensors/RainCounterI2C.h>
-
-const uint8_t RainCounterI2CAddress2 = 0x06;
-// I2C Address for EnviroDIY external tip counter; 0x08 by default
-// const float depthPerTipEvent = 0.2;  // rain depth in mm per tip event
-
-// Create a Rain Counter sensor object
-RainCounterI2C    tbi2c2(RainCounterI2CAddress2, depthPerTipEvent);
-
-// Create number of tips and rain depth variable pointers for the tipping bucket
-Variable* tbi2cWindCounts =
-    new RainCounterI2C_Tips(&tbi2c2, "12345678-abcd-1234-ef00-1234567890ab");
-// Variable* tbi2cDepth =
-//     new RainCounterI2C_Depth(&tbi2c, "12345678-abcd-1234-ef00-1234567890ab");
-/** End [i2c_rain_wind] */
 
 
 // ==========================================================================
@@ -372,7 +324,7 @@ const char *sonarGageHeightVarUnit = "Foot";
 // A short code for the variable
 const char *sonarGageHeightVarCode = "SonarGageHeight";
 // The (optional) universallly unique identifier
-const char *sonarGageHeightVarUUID = "2db61932-df20-4dc5-a353-015dfeb9b178";
+const char *sonarGageHeightVarUUID = "4ca2ff24-06f4-4104-953f-8161fcb00b8d";
 
 // Finally, Create a calculated variable and return a variable pointer to it
 Variable *calculatedSonarGageHeight = new Variable(
@@ -383,74 +335,29 @@ Variable *calculatedSonarGageHeight = new Variable(
 
 
 // ==========================================================================
-
-// Create the function to calculate wind speed variable
-float calculateWindSpeed(void) {
-    float windSpeed = -9999;  // Always safest to start with a bad value
-    float period = -9999;  // seconds between gettting event counts
-    float frequency = -9999;  // average event frequency in Hz
-    float eventCount = tbi2cWindCounts->getValue();
-    if (eventCount != -9999)  // make sure both inputs are good
-    {
-        period = loggingInterval * 60.0;    // in seconds
-        frequency = eventCount/period; // average event frequency in Hz
-        windSpeed = frequency * 2.5 * 1.60934;  // in km/h,
-        // 2.5 mph/Hz & 1.60934 kmph/mph and 2.5 mph/Hz conversion factor from
-    	// https://www.store.inspeed.com/Inspeed-Version-II-Reed-Switch-Anemometer-Sensor-Only-WS2R.htm
-    }
-    return windSpeed;
-}
-
-// Properties of the calculated variable
-// The number of digits after the decimal place
-const uint8_t calculatedVarResolution = 3;
-// This must be a value from http://vocabulary.odm2.org/variablename/
-const char *calculatedVarName = "windSpeed";
-// This must be a value from http://vocabulary.odm2.org/units/
-const char *calculatedVarUnit = "KilometerPerHour";
-// A short code for the variable
-const char *calculatedVarCode = "WindSpeed";
-// The (optional) universallly unique identifier
-const char *calculatedVarUUID = "1cfdccc0-9d09-4367-9705-1892731fb392";
-
-// Create a calculated variable pointer and return a variable pointer to it
-Variable *calculatedWindSpeed = new Variable(
-    calculateWindSpeed, calculatedVarResolution, calculatedVarName,
-    calculatedVarUnit, calculatedVarCode, calculatedVarUUID);
-
-
-
-// ==========================================================================
 //  Creating the Variable Array[s] and Filling with Variable Objects
 // ==========================================================================
 /** Start [variables_create_in_array] */
 // Version 1: Create pointers for all of the variables from the sensors,
 // at the same time putting them into an array
 Variable* variableList[] = {
-    // new ProcessorStats_SampleNumber(&mcuBoard, "12345678-abcd-1234-ef00-1234567890ab"),
-    new BoschBME280_Temp(&bme280, "6575ae8b-fd62-4a76-b4f8-fc54b2411d89"),
-    new BoschBME280_Humidity(&bme280, "9cb5d227-fa1f-4ab4-8f6f-997b86324164"),
-    new BoschBME280_Pressure(&bme280, "77da2fd7-ff62-4666-988f-4a98551029fe"),
-    new YosemitechY511_Turbidity(&y511, "0b5fae1c-4303-4d20-bbc9-3836f8441dc4"),
-    // new YosemitechY511_Temp(&y511, "12345678-abcd-1234-ef00-1234567890ab"),
-    new YosemitechY520_Cond(&y520, "84f37fdd-2852-4802-9022-aaeb78b6dc92"),
-    new YosemitechY520_Temp(&y520, "c7fc006f-65d9-49ff-b6de-8484a236e8ce"),
-    // new RainCounterI2C_Tips(&tbi2c, "12345678-abcd-1234-ef00-1234567890ab"),
-    new RainCounterI2C_Depth(&tbi2c, "29a546cc-a91e-45fd-b660-8c61509f5e43"),
+    new ProcessorStats_SampleNumber(&mcuBoard,
+                                    "cce7c6d8-8264-4c98-88b3-d11e9fbb7244"),
+    new ProcessorStats_Battery(&mcuBoard,
+                               "5d595057-0045-4b30-96db-16368ebf2a4a"),
+    // new MaximDS3231_Temp(&ds3231, "12345678-abcd-1234-ef00-1234567890ab"),
     sonar1Range,
     calculatedSonarGageHeight,
-    tbi2cWindCounts,
-    calculatedWindSpeed,
-    new ProcessorStats_Battery(&mcuBoard, "989621c4-f6a9-4310-9b00-867c6ad6a8b0"),
-    // new MaximDS3231_Temp(&ds3231, "12345678-abcd-1234-ef00-1234567890ab"),
+    new YosemitechY511_Turbidity(&y511, "e2b02a89-531a-4607-9af8-eb03e4af2b6f"),
+    new YosemitechY511_Temp(&y511, "1d5837da-1efd-4d5b-a71e-4d96f3a1607b"),
+    new YosemitechY520_Cond(&y520, "664f189f-cd88-4a32-833f-387cd63a6e20"),
+    new YosemitechY520_Temp(&y520, "a64ce8ef-0c98-4d96-8dec-4530b8c28de8"),
+    //  ... Add more variables as needed!
     // new Modem_RSSI(&modem, "12345678-abcd-1234-ef00-1234567890ab"),
-    // new Modem_SignalPercent(&modem, "12345678-abcd-1234-ef00-1234567890ab"),
+    new Modem_SignalPercent(&modem, "455335ff-a281-4622-ba0a-6715837c84e5"),
 };
-
-
 // Count up the number of pointers in the array
 int variableCount = sizeof(variableList) / sizeof(variableList[0]);
-
 // Create the VariableArray object
 VariableArray varArray(variableCount, variableList);
 /** End [variables_create_in_array] */
@@ -472,9 +379,9 @@ Logger dataLogger(LoggerID, loggingInterval, &varArray);
 // Device registration and sampling feature information can be obtained after
 // registration at https://monitormywatershed.org or https://data.envirodiy.org
 const char* registrationToken =
-    "8c5936b3-2e7c-4e25-890a-b61552a1511d";  // Device registration token
+    "55c975ff-1169-4224-a148-dfa0c6b91d28";  // Device registration token
 const char* samplingFeature =
-    "b22fb85d-e96d-4790-ac4c-a02ea190bd85";  // Sampling feature UUID
+    "3c65b0d5-303b-4115-bb72-852aa7f8a3ad";  // Sampling feature UUID
 
 // Create a data publisher for the Monitor My Watershed/EnviroDIY POST endpoint
 #include <publishers/EnviroDIYPublisher.h>

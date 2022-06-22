@@ -8,11 +8,41 @@ Site Link:
 #### Library Dependencies (in PlatformIO.ini)
 
 ```.ini
-lib_deps =
-; Using ModularSensors *master* branch as of May 18, 2018: head, = 0.11.7
-    EnviroDIY_ModularSensors@>=0.11.7
-    https://github.com/PaulStoffregen/AltSoftSerial.git
-    https://github.com/EnviroDIY/SoftwareSerial_ExternalInts.git
+[platformio]
+description = beth deployments using ModularSensors
+src_dir = CircleLakeUpdate
+;src_dir = simple_logging
+;src_dir = Example_04_Mayfly_setRTC
+
+[env:mayfly]
+board = mayfly
+platform = atmelavr
+framework = arduino
+monitor_speed = 115200
+lib_ldf_mode = deep+
+lib_ignore = 
+	RTCZero
+	Adafruit NeoPixel
+	Adafruit GFX Library
+	Adafruit SSD1306
+	Adafruit ADXL343
+	Adafruit STMPE610
+	Adafruit TouchScreen
+	Adafruit ILI9341
+build_flags = 
+	-D SDI12_EXTERNAL_PCINT
+	-D NEOSWSERIAL_EXTERNAL_PCINT
+	-D TINY_GSM_RX_BUFFER=64
+	-D TINY_GSM_YIELD_MS=2
+	-D MQTT_MAX_PACKET_SIZE=240
+	-D BUILD_MODEM_XBEE_CELLULAR
+	-D MS_RAIN_SOFTWAREWIRE
+lib_deps = 
+	EnviroDIY_ModularSensors@=0.32.2
+	https://github.com/PaulStoffregen/AltSoftSerial.git
+	https://github.com/SRGDamia1/NeoSWSerial.git
+	https://github.com/EnviroDIY/SoftwareSerial_ExternalInts.git
+
 ```
 
 #### Logger Settings
