@@ -118,7 +118,7 @@ const char* sketchName = "CircleLakeUpdate.ino";
 // Logger ID, also becomes the prefix for the name of the data file on SD card
 const char* LoggerID = "Mayfly-20191";
 // How frequently (in minutes) to log data
-const uint8_t loggingInterval = 1;
+const uint8_t loggingInterval = 15;
 // Your logger's timezone.
 const int8_t timeZone = -6;  // Central Standard Time (CST=-6)
 // NOTE:  Daylight savings time will not be applied!  Please use standard time!
@@ -350,7 +350,7 @@ float calculateSonarGageHeight(void) {
     float sonarGageHeight_mm = -9999;  // Always safest to start with a bad value
     const float minimumRange = 500;    // in millimeters
     const float maximumRange = 10000;    // in millimeters
-    const float sonarDistanceToZeroStage = 304.8*(10); // 10-ft
+    const float sonarDistanceToZeroStage = 304.8*(8.08); // 8.08-ft
         // in millimeters, where 304.8 mm = 1.00 ft
     float sonarDistanceMeasured = sonar1Range->getValue();
     if (sonarDistanceMeasured != -9999)  // make sure all inputs are good
